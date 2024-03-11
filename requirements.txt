@@ -1,5 +1,8 @@
 altair
+beautifulsoup4
 numpy
 pandas
 pydeck
+requests
+seleniumbase
 streamlit
