@@ -2,7 +2,9 @@ altair
 beautifulsoup4
 numpy
 pandas
+plotly
 pydeck
 requests
 seleniumbase
 streamlit
+xlsx2csv
