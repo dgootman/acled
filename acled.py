@@ -96,11 +96,15 @@ def download_dataset(dataset):
     )[-1]
 
     if not (data_path / filename).exists():
+        LOGGER.info(f"Downloading dataset to file {filename}: {dataset}")
+
         temp_file = tmp_path / filename
         with temp_file.open("wb") as f:
             for chunk in r.iter_content(1024):
                 f.write(chunk)
         shutil.move(temp_file, data_path / filename)
+
+        LOGGER.info(f"Downloaded dataset to file {filename}: {dataset}")
 
     return filename
 
@@ -108,12 +112,17 @@ def download_dataset(dataset):
 def convert_to_csv(filename: str):
     """Convert dataset file to CSV for faster load in Pandas"""
     csv_filename = str(Path(filename).with_suffix(".csv"))
+
     if not (data_path / csv_filename).exists():
+        LOGGER.info(f"Converting file to CSV: {filename}")
+
         temp_file = tmp_path / csv_filename
         Xlsx2csv(data_path / filename, dateformat="%Y-%m-%dT%H:%M:%S").convert(
             str(temp_file)
         )
         shutil.move(temp_file, data_path / csv_filename)
+
+        LOGGER.info(f"Converted file to CSV: {filename}")
 
     return csv_filename
 
