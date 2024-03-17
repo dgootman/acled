@@ -16,7 +16,7 @@ LOGGER = get_logger(__name__)
 url = "https://acleddata.com/curated-data-files"
 
 tmp_path = Path("/tmp")
-data_path = Path("data")
+data_path = Path("static")
 data_path.mkdir(exist_ok=True)
 
 
