@@ -1,9 +1,7 @@
-import csv
 import shutil
 from datetime import date
 from email.message import Message
 from pathlib import Path
-from typing import Callable
 
 import pandas as pd
 import plotly.express as px
@@ -11,7 +9,6 @@ import requests
 import streamlit as st
 from bs4 import BeautifulSoup
 from streamlit.logger import get_logger
-from xlsx2csv import Xlsx2csv
 
 LOGGER = get_logger(__name__)
 
@@ -82,6 +79,16 @@ def load_datasets() -> list[dict]:
     ]
 
 
+def human_file_size(file: Path, suffix="B"):
+    # From: https://stackoverflow.com/questions/1094841/get-human-readable-version-of-file-size
+    size = file.stat().st_size
+    for unit in ("", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"):
+        if abs(size) < 1024.0:
+            return f"{size:3.1f}{unit}{suffix}"
+        size /= 1024.0
+    return f"{size:.1f}Yi{suffix}"
+
+
 def download_dataset(dataset):
     name = dataset["name"]
 
@@ -95,8 +102,10 @@ def download_dataset(dataset):
         "filename", failobj=[f"{name}.xlsx"], header="content-disposition"
     )[-1]
 
-    if not (data_path / filename).exists():
-        LOGGER.info(f"Downloading dataset to file {filename}: {dataset}")
+    data_file = data_path / filename
+
+    if not data_file.exists():
+        LOGGER.info(f"Downloading dataset to file: {filename} ({dataset})")
 
         temp_file = tmp_path / filename
         with temp_file.open("wb") as f:
@@ -104,66 +113,39 @@ def download_dataset(dataset):
                 f.write(chunk)
         shutil.move(temp_file, data_path / filename)
 
-        LOGGER.info(f"Downloaded dataset to file {filename}: {dataset}")
+        LOGGER.info(f"Downloaded dataset to file: {filename} ({human_file_size(data_file)})")
 
     return filename
 
 
-def convert_to_csv(filename: str):
-    """Convert dataset file to CSV for faster load in Pandas"""
-    csv_filename = str(Path(filename).with_suffix(".csv"))
+def convert_to_hdf5(filename: str):
+    """Convert dataset file to HDF5 for faster load in Pandas"""
+    h5_filename = str(Path(filename).with_suffix(".h5"))
+    data_file = data_path / h5_filename
 
-    if not (data_path / csv_filename).exists():
-        LOGGER.info(f"Converting file to CSV: {filename}")
+    if not data_file.exists():
+        LOGGER.info(f"Converting file to HDF5: {filename}...")
 
-        temp_file = tmp_path / csv_filename
-        Xlsx2csv(data_path / filename, dateformat="%Y-%m-%dT%H:%M:%S").convert(
-            str(temp_file)
-        )
-        shutil.move(temp_file, data_path / csv_filename)
+        temp_file = tmp_path / h5_filename
+        LOGGER.info(f"Reading file: {filename}...")
+        df = pd.read_excel(data_path / filename)
 
-        LOGGER.info(f"Converted file to CSV: {filename}")
+        LOGGER.info(f"Writing file: {h5_filename}...")
+        df.to_hdf(temp_file, key="df", mode="w")
 
-    return csv_filename
+        shutil.move(temp_file, data_file)
 
+        LOGGER.info(f"Converted file to HDF5: {h5_filename} ({human_file_size(data_file)})")
 
-class FilteringCsvReader:
-    """CSV file reader with a condition function to load only applicable rows"""
-
-    def __init__(self, filename: str, condition: Callable[[dict], bool]) -> None:
-        self.file = open(filename, "rt")
-        self.condition = condition
-        self.iterator = self.__iter__()
-
-    def read(self, count=-1):
-        return next(self.iterator, "")
-
-    def __iter__(self):
-        line = next(self.file)
-        headers = next(csv.reader([line]))
-        yield line
-
-        try:
-            while (line := next(self.file)) != None:
-                data = dict(zip(headers, next(csv.reader([line]))))
-                while not self.condition(data):
-                    line = next(self.file)
-                    data = dict(zip(headers, next(csv.reader([line]))))
-                yield line
-        except StopIteration:
-            return ""
+    return h5_filename
 
 
 @st.cache_data
-def load_dataset(dataset, start_year, end_year):
+def load_dataset(dataset, start_year, end_year) -> pd.DataFrame:
     dataset_file = download_dataset(dataset)
-    csv_file = convert_to_csv(dataset_file)
-    return pd.read_csv(
-        FilteringCsvReader(
-            data_path / csv_file,
-            lambda d: start_year <= int(d["YEAR"]) <= end_year,
-        )
-    )
+    h5_file = convert_to_hdf5(dataset_file)
+    df = pd.read_hdf(data_path / h5_file)
+    return df[df.YEAR.between(start_year, end_year)]
 
 
 def main():

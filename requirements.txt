@@ -1,10 +1,11 @@
 altair
 beautifulsoup4
 numpy
+openpyxl
 pandas
 plotly
 pydeck
 requests
 seleniumbase
 streamlit
-xlsx2csv
+tables
