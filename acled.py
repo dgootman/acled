@@ -190,12 +190,9 @@ def main():
         if fatalities:
             df = df[df.FATALITIES > 0]
 
-        all_countries = sorted(df.COUNTRY.unique())
-        countries = st.multiselect(
-            "Countries", options=all_countries, default=all_countries
-        )
-
-        df = df[df.COUNTRY.isin(countries)]
+        countries = st.multiselect("Countries", options=sorted(df.COUNTRY.unique()))
+        if countries:
+            df = df[df.COUNTRY.isin(countries)]
 
         item_count = st.slider("Items", 10, len(df), value=100)
 
@@ -230,7 +227,6 @@ def main():
             with col2:
                 st.write(human_file_size(file))
             with col3:
-                # st.link_button(file.name, f"app/{file}")
                 st.markdown(f"[{file.name}](app/{file})")
 
 
