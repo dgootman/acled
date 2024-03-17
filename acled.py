@@ -83,11 +83,11 @@ def load_datasets() -> list[dict]:
 def human_file_size(file: Path, suffix="B"):
     # From: https://stackoverflow.com/questions/1094841/get-human-readable-version-of-file-size
     size = file.stat().st_size
-    for unit in ("", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"):
+    for unit in ("", "K", "M", "G", "T", "P", "E", "Z"):
         if abs(size) < 1024.0:
             return f"{size:3.1f}{unit}{suffix}"
         size /= 1024.0
-    return f"{size:.1f}Yi{suffix}"
+    return f"{size:.1f}Y{suffix}"
 
 
 def download_dataset(dataset):
@@ -219,6 +219,19 @@ def main():
 
             st.header("Cumulative fatalities by date and country")
             st.plotly_chart(px.line(fatalities_by_date_and_country.cumsum()))
+
+    with st.expander("Cached files"):
+        for file in sorted(Path("static").iterdir()):
+            col1, col2, col3 = st.columns([1, 2, 10])
+            with col1:
+                if st.button("🗑️", key=str(file)):
+                    file.unlink()
+                    st.rerun()
+            with col2:
+                st.write(human_file_size(file))
+            with col3:
+                # st.link_button(file.name, f"app/{file}")
+                st.markdown(f"[{file.name}](app/{file})")
 
 
 if __name__ == "__main__":
