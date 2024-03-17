@@ -20,7 +20,7 @@ data_path = Path("data")
 data_path.mkdir(exist_ok=True)
 
 
-@st.cache_resource(ttl="10 min")
+@st.cache_resource(ttl=timedelta(minutes=10))
 def start_session() -> requests.Session:
     session = requests.Session()
 
@@ -62,7 +62,7 @@ def start_session() -> requests.Session:
     return session
 
 
-@st.cache_data(ttl="1 day")
+@st.cache_data(ttl=timedelta(days=1))
 def load_datasets() -> list[dict]:
     response = start_session().get(url)
     response.raise_for_status()
@@ -114,7 +114,9 @@ def download_dataset(dataset):
                 f.write(chunk)
         shutil.move(temp_file, data_path / filename)
 
-        LOGGER.info(f"Downloaded dataset to file: {filename} ({human_file_size(data_file)})")
+        LOGGER.info(
+            f"Downloaded dataset to file: {filename} ({human_file_size(data_file)})"
+        )
 
     return filename
 
@@ -136,7 +138,9 @@ def convert_to_hdf5(filename: str):
 
         shutil.move(temp_file, data_file)
 
-        LOGGER.info(f"Converted file to HDF5: {h5_filename} ({human_file_size(data_file)})")
+        LOGGER.info(
+            f"Converted file to HDF5: {h5_filename} ({human_file_size(data_file)})"
+        )
 
     return h5_filename
 
