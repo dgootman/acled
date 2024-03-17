@@ -5,6 +5,7 @@ openpyxl
 pandas
 plotly
 pydeck
+python-dateutil
 requests
 seleniumbase
 streamlit

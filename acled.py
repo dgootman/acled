@@ -1,5 +1,5 @@
 import shutil
-from datetime import date
+from datetime import date, timedelta
 from email.message import Message
 from pathlib import Path
 
@@ -8,6 +8,7 @@ import plotly.express as px
 import requests
 import streamlit as st
 from bs4 import BeautifulSoup
+from dateutil.relativedelta import relativedelta
 from streamlit.logger import get_logger
 
 LOGGER = get_logger(__name__)
@@ -156,13 +157,14 @@ def main():
 
     st.title("ACLED")
 
-    datasets = load_datasets()
-
-    start_year, end_year = st.select_slider(
+    start_date, end_date = st.slider(
         "Date range",
-        options=range(2000, date.today().year + 1),
-        value=(date.today().year - 1, date.today().year),
+        value=(date.today() - relativedelta(years=1), date.today()),
+        min_value=date(2020, 1, 1),
+        max_value=date.today(),
     )
+
+    datasets = load_datasets()
 
     selected_datasets = st.multiselect(
         "Datasets", datasets, format_func=lambda d: d["name"]
@@ -172,11 +174,13 @@ def main():
 
         df = pd.concat(
             map(
-                lambda d: load_dataset(d, start_year, end_year),
+                lambda d: load_dataset(d, start_date.year, end_date.year),
                 selected_datasets,
             ),
             keys=[d["name"] for d in selected_datasets],
         )
+
+        df = df[df.EVENT_DATE.dt.date.between(start_date, end_date + timedelta(days=1))]
 
         item_count = st.slider("Items", 10, len(df), value=100)
 
