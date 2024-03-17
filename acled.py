@@ -168,6 +168,8 @@ def main():
         max_value=date.today(),
     )
 
+    fatalities = st.checkbox("Only events with fatalities")
+
     datasets = load_datasets()
 
     selected_datasets = st.multiselect(
@@ -185,6 +187,15 @@ def main():
         )
 
         df = df[df.EVENT_DATE.dt.date.between(start_date, end_date + timedelta(days=1))]
+        if fatalities:
+            df = df[df.FATALITIES > 0]
+
+        all_countries = sorted(df.COUNTRY.unique())
+        countries = st.multiselect(
+            "Countries", options=all_countries, default=all_countries
+        )
+
+        df = df[df.COUNTRY.isin(countries)]
 
         item_count = st.slider("Items", 10, len(df), value=100)
 
@@ -194,19 +205,20 @@ def main():
         st.header("Most fatal")
         st.dataframe(df.sort_values("FATALITIES", ascending=False).head(item_count))
 
-        fatalities_by_date_and_country = (
-            df.groupby(["EVENT_DATE", "COUNTRY"])["FATALITIES"]
-            .sum()
-            .reset_index()
-            .pivot(index="EVENT_DATE", columns="COUNTRY")
-            .FATALITIES.fillna(0)
-        )
+        if not df.empty:
+            fatalities_by_date_and_country = (
+                df.groupby(["EVENT_DATE", "COUNTRY"])["FATALITIES"]
+                .sum()
+                .reset_index()
+                .pivot(index="EVENT_DATE", columns="COUNTRY")
+                .FATALITIES.fillna(0)
+            )
 
-        st.header("Fatalities by date and country")
-        st.plotly_chart(px.line(fatalities_by_date_and_country))
+            st.header("Fatalities by date and country")
+            st.plotly_chart(px.line(fatalities_by_date_and_country))
 
-        st.header("Cumulative fatalities by date and country")
-        st.plotly_chart(px.line(fatalities_by_date_and_country.cumsum()))
+            st.header("Cumulative fatalities by date and country")
+            st.plotly_chart(px.line(fatalities_by_date_and_country.cumsum()))
 
 
 if __name__ == "__main__":
