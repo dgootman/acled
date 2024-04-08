@@ -1,3 +1,4 @@
+.streamlit/secrets.toml
 .vscode/
 downloaded_files/
 static/

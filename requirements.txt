@@ -1,12 +1,9 @@
 altair
-beautifulsoup4
 numpy
-openpyxl
 pandas
 plotly
 pydeck
 python-dateutil
 requests
-seleniumbase
 streamlit
 tables

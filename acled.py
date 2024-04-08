@@ -1,83 +1,19 @@
 import shutil
 from datetime import date, timedelta
-from email.message import Message
 from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import requests
 import streamlit as st
-from bs4 import BeautifulSoup
 from dateutil.relativedelta import relativedelta
 from streamlit.logger import get_logger
 
 LOGGER = get_logger(__name__)
 
-url = "https://acleddata.com/curated-data-files"
-
 tmp_path = Path("/tmp")
 data_path = Path("static")
 data_path.mkdir(exist_ok=True)
-
-
-@st.cache_resource(ttl=timedelta(minutes=10))
-def start_session() -> requests.Session:
-    session = requests.Session()
-
-    response = session.get(url)
-
-    if response.ok:
-        return session
-
-    from seleniumbase import SB
-
-    def verify_success(sb):
-        for _ in range(8):
-            if "Curated Data" in sb.get_page_title():
-                break
-            sb.sleep(1)
-        sb.assert_title_contains("Curated Data")
-
-    with SB(uc_cdp=True, headless=True, guest_mode=True) as sb:
-        sb.open(url)
-        if "Curated Data" not in sb.get_page_title():
-            if sb.is_element_visible('input[value*="Verify"]'):
-                sb.click('input[value*="Verify"]')
-            elif sb.is_element_visible('iframe[title*="challenge"]'):
-                sb.switch_to_frame('iframe[title*="challenge"]')
-                sb.click("span.mark", timeout=15)
-            else:
-                raise Exception("Detected!")
-            try:
-                verify_success(sb)
-            except Exception:
-                raise Exception("Detected!")
-
-        session.headers.update({"User-Agent": sb.get_user_agent()})
-        for cookie in sb.driver.get_cookies():
-            session.cookies.set(cookie["name"], cookie["value"])
-
-    response = session.get(url)
-    response.raise_for_status()
-    return session
-
-
-@st.cache_data(ttl=timedelta(days=1))
-def load_datasets() -> list[dict]:
-    response = start_session().get(url)
-    response.raise_for_status()
-
-    soup = BeautifulSoup(response.text, "html.parser")
-
-    return [
-        {
-            "name": download_box_content.find("h1").get_text(strip=True),
-            "url": download_box_content.find("a")["href"],
-        }
-        for download_box_content in soup.find_all(
-            "div", attrs={"class": "download-box-content"}
-        )
-    ]
 
 
 def human_file_size(file: Path, suffix="B"):
@@ -90,23 +26,30 @@ def human_file_size(file: Path, suffix="B"):
     return f"{size:.1f}Y{suffix}"
 
 
-def download_dataset(dataset):
-    name = dataset["name"]
-
-    r = start_session().get(dataset["url"], stream=True)
-    r.raise_for_status()
-
-    m = Message()
-    for key, value in r.headers.items():
-        m[key] = value
-    filename = m.get_param(
-        "filename", failobj=[f"{name}.xlsx"], header="content-disposition"
-    )[-1]
+def download_dataset(year):
+    filename = f"{year}.csv"
 
     data_file = data_path / filename
 
     if not data_file.exists():
-        LOGGER.info(f"Downloading dataset to file: {filename} ({dataset})")
+        r = requests.get(
+            "https://api.acleddata.com/acled/read.exportcsv",
+            params={
+                "email": st.secrets["acled_email"],
+                "key": st.secrets["acled_key"],
+                "year": year,
+                "limit": 0,
+            },
+            stream=True,
+        )
+
+        LOGGER.info(
+            f"Download dataset response: {dict(status_code=r.status_code, headers=r.headers)}"
+        )
+
+        r.raise_for_status()
+
+        LOGGER.info(f"Downloading dataset to file: {filename}")
 
         temp_file = tmp_path / filename
         with temp_file.open("wb") as f:
@@ -131,7 +74,7 @@ def convert_to_hdf5(filename: str):
 
         temp_file = tmp_path / h5_filename
         LOGGER.info(f"Reading file: {filename}...")
-        df = pd.read_excel(data_path / filename)
+        df = pd.read_csv(data_path / filename, parse_dates=["event_date"])
 
         LOGGER.info(f"Writing file: {h5_filename}...")
         df.to_hdf(temp_file, key="df", mode="w")
@@ -146,11 +89,11 @@ def convert_to_hdf5(filename: str):
 
 
 @st.cache_data
-def load_dataset(dataset, start_year, end_year) -> pd.DataFrame:
-    dataset_file = download_dataset(dataset)
+def load_dataset(year) -> pd.DataFrame:
+    dataset_file = download_dataset(year)
     h5_file = convert_to_hdf5(dataset_file)
     df = pd.read_hdf(data_path / h5_file)
-    return df[df.YEAR.between(start_year, end_year)]
+    return df
 
 
 def main():
@@ -170,52 +113,38 @@ def main():
 
     fatalities = st.checkbox("Only events with fatalities")
 
-    datasets = load_datasets()
+    df = pd.concat(map(load_dataset, range(start_date.year, end_date.year + 1)))
 
-    selected_datasets = st.multiselect(
-        "Datasets", datasets, format_func=lambda d: d["name"]
-    )
+    df = df[df.event_date.dt.date.between(start_date, end_date + timedelta(days=1))]
+    if fatalities:
+        df = df[df.fatalities > 0]
 
-    if selected_datasets:
+    countries = st.multiselect("Countries", options=sorted(df.country.unique()))
+    if countries:
+        df = df[df.country.isin(countries)]
 
-        df = pd.concat(
-            map(
-                lambda d: load_dataset(d, start_date.year, end_date.year),
-                selected_datasets,
-            ),
-            keys=[d["name"] for d in selected_datasets],
+    item_count = st.slider("Items", 10, len(df), value=100)
+
+    st.header("Recent")
+    st.dataframe(df.sort_values("event_date", ascending=False).head(item_count))
+
+    st.header("Most fatal")
+    st.dataframe(df.sort_values("fatalities", ascending=False).head(item_count))
+
+    if not df.empty:
+        fatalities_by_date_and_country = (
+            df.groupby(["event_date", "country"])["fatalities"]
+            .sum()
+            .reset_index()
+            .pivot(index="event_date", columns="country")
+            .fatalities.fillna(0)
         )
 
-        df = df[df.EVENT_DATE.dt.date.between(start_date, end_date + timedelta(days=1))]
-        if fatalities:
-            df = df[df.FATALITIES > 0]
+        st.header("Fatalities by date and country")
+        st.plotly_chart(px.line(fatalities_by_date_and_country))
 
-        countries = st.multiselect("Countries", options=sorted(df.COUNTRY.unique()))
-        if countries:
-            df = df[df.COUNTRY.isin(countries)]
-
-        item_count = st.slider("Items", 10, len(df), value=100)
-
-        st.header("Recent")
-        st.dataframe(df.sort_values("EVENT_DATE", ascending=False).head(item_count))
-
-        st.header("Most fatal")
-        st.dataframe(df.sort_values("FATALITIES", ascending=False).head(item_count))
-
-        if not df.empty:
-            fatalities_by_date_and_country = (
-                df.groupby(["EVENT_DATE", "COUNTRY"])["FATALITIES"]
-                .sum()
-                .reset_index()
-                .pivot(index="EVENT_DATE", columns="COUNTRY")
-                .FATALITIES.fillna(0)
-            )
-
-            st.header("Fatalities by date and country")
-            st.plotly_chart(px.line(fatalities_by_date_and_country))
-
-            st.header("Cumulative fatalities by date and country")
-            st.plotly_chart(px.line(fatalities_by_date_and_country.cumsum()))
+        st.header("Cumulative fatalities by date and country")
+        st.plotly_chart(px.line(fatalities_by_date_and_country.cumsum()))
 
     with st.expander("Cached files"):
         for file in sorted(Path("static").iterdir()):
