@@ -1,3 +1,4 @@
+import colorsys
 import shutil
 from datetime import date, timedelta
 from pathlib import Path
@@ -126,7 +127,27 @@ def main():
     item_count = st.slider("Items", 10, len(df), value=100)
 
     st.header("Recent")
-    st.dataframe(df.sort_values("event_date", ascending=False).head(item_count))
+
+    recent_df = df.sort_values("event_date", ascending=False).head(item_count)
+    st.dataframe(recent_df)
+
+    recent_df["date_rank"] = recent_df["event_date"].rank(pct=True, method="dense")
+    recent_df["fatality_rank"] = recent_df["fatalities"].rank(pct=True, method="dense")
+    recent_df["color"] = recent_df.apply(
+        lambda row: tuple(
+            int(255 * x)
+            for x in colorsys.hsv_to_rgb(
+                0.2 * (1 - row["fatality_rank"]),
+                1.0,
+                1.0,
+            )
+        )
+        + ((0.5 + 0.5 * row["date_rank"]),),
+        axis=1,
+    )
+    recent_df["size"] = recent_df["fatalities"].rank(method="dense") * 10
+
+    st.map(recent_df, color="color", size="size")
 
     st.header("Most fatal")
     st.dataframe(df.sort_values("fatalities", ascending=False).head(item_count))
