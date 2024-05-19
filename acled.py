@@ -100,11 +100,11 @@ def load_dataset(year) -> pd.DataFrame:
 
 def main():
     st.set_page_config(
-        page_title="ACLED",
-        page_icon="⚔️",
+        page_title="ACLED Dashboard",
+        page_icon="https://acleddata.com/acleddatanew/wp-content/uploads/2019/10/acled-favi-high-res.png",
     )
 
-    st.title("ACLED")
+    st.title("ACLED | Armed Conflict Location & Events Data")
 
     start_date, end_date = st.slider(
         "Date range",
