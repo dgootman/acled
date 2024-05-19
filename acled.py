@@ -106,11 +106,9 @@ def main():
 
     st.title("ACLED | Armed Conflict Location & Events Data")
 
-    with st.form("filters"):
-        st.write("##### Filters")
-
+    with st.form("date_range"):
         start_date, end_date = st.slider(
-            "Date range",
+            "##### Date range",
             value=(date.today() - relativedelta(years=1), date.today()),
             min_value=date(2020, 1, 1),
             max_value=date.today(),
@@ -122,13 +120,27 @@ def main():
 
     df = df[df.event_date.dt.date.between(start_date, end_date + timedelta(days=1))]
 
-    countries = st.multiselect("Countries", options=sorted(df.country.unique()))
-    if countries:
-        df = df[df.country.isin(countries)]
+    with st.expander("Filters"):
+        filter_columns = [
+            ("region", "Regions"),
+            ("country", "Countries"),
+            ("event_type", "Event Types"),
+            ("sub_event_type", "Sub-event Types"),
+            ("source_scale", "Source Type"),
+        ]
 
-    fatalities = st.checkbox("Only events with fatalities")
-    if fatalities:
-        df = df[df.fatalities > 0]
+        st_columns = st.columns(2)
+
+        for index, (column, name) in enumerate(filter_columns):
+            values = st_columns[index % 2].multiselect(
+                name, options=sorted(df[column].unique())
+            )
+            if values:
+                df = df[df[column].isin(values)]
+
+        fatalities = st.checkbox("Only events with fatalities")
+        if fatalities:
+            df = df[df.fatalities > 0]
 
     item_count = st.slider("Items", 10, len(df), value=100)
 
