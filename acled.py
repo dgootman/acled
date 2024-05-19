@@ -3,6 +3,7 @@ import shutil
 from datetime import date, timedelta
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import requests
@@ -128,12 +129,14 @@ def main():
 
     def render_map(df: pd.DataFrame):
         df["date_rank"] = df["event_date"].rank(pct=True, method="dense")
-        df["fatality_rank"] = df["fatalities"].rank(pct=True, method="dense")
+        df["fatality_rank"] = np.maximum(
+            np.log10(np.minimum(df["fatalities"], 500)) / np.log10(500), 0
+        )
         df["color"] = df.apply(
             lambda row: tuple(
                 int(255 * x)
                 for x in colorsys.hsv_to_rgb(
-                    0.2 * (1 - row["fatality_rank"]),
+                    0.33 * (1 - row["fatality_rank"]),
                     1.0,
                     1.0,
                 )
@@ -143,7 +146,7 @@ def main():
         )
         df["size"] = df["fatalities"].rank(method="dense") * 10
 
-        st.map(df, color="color", size="size")
+        st.map(df.sort_values("event_date"), color="color", size="size")
 
     st.header("Recent")
 
