@@ -106,24 +106,29 @@ def main():
 
     st.title("ACLED | Armed Conflict Location & Events Data")
 
-    start_date, end_date = st.slider(
-        "Date range",
-        value=(date.today() - relativedelta(years=1), date.today()),
-        min_value=date(2020, 1, 1),
-        max_value=date.today(),
-    )
+    with st.form("filters"):
+        st.write("##### Filters")
 
-    fatalities = st.checkbox("Only events with fatalities")
+        start_date, end_date = st.slider(
+            "Date range",
+            value=(date.today() - relativedelta(years=1), date.today()),
+            min_value=date(2020, 1, 1),
+            max_value=date.today(),
+        )
+
+        st.form_submit_button()
 
     df = pd.concat(map(load_dataset, range(start_date.year, end_date.year + 1)))
 
     df = df[df.event_date.dt.date.between(start_date, end_date + timedelta(days=1))]
-    if fatalities:
-        df = df[df.fatalities > 0]
 
     countries = st.multiselect("Countries", options=sorted(df.country.unique()))
     if countries:
         df = df[df.country.isin(countries)]
+
+    fatalities = st.checkbox("Only events with fatalities")
+    if fatalities:
+        df = df[df.fatalities > 0]
 
     item_count = st.slider("Items", 10, len(df), value=100)
 
