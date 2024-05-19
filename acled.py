@@ -129,18 +129,25 @@ def main():
 
     def render_map(df: pd.DataFrame):
         df["date_rank"] = df["event_date"].rank(pct=True, method="dense")
-        df["fatality_rank"] = np.maximum(
-            np.log10(np.minimum(df["fatalities"], 500)) / np.log10(500), 0
+        df["fatality_rank"] = np.log10(np.clip(df["fatalities"], 1, 500)) / np.log10(
+            500
         )
         df["color"] = df.apply(
             lambda row: tuple(
                 int(255 * x)
                 for x in colorsys.hsv_to_rgb(
-                    0.33 * (1 - row["fatality_rank"]),
+                    (
+                        # green for no fatalities
+                        120 / 360
+                        if row["fatalities"] == 0
+                        # yellow/red gradient based on number of fatalities
+                        else 60 / 360 * (1 - row["fatality_rank"])
+                    ),
                     1.0,
                     1.0,
                 )
             )
+            # opacity based on date rank
             + ((0.5 + 0.5 * row["date_rank"]),),
             axis=1,
         )
