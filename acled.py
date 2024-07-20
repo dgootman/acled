@@ -66,35 +66,35 @@ def download_dataset(year):
     return filename
 
 
-def convert_to_hdf5(filename: str):
-    """Convert dataset file to HDF5 for faster load in Pandas"""
-    h5_filename = str(Path(filename).with_suffix(".h5"))
-    data_file = data_path / h5_filename
+def store_dataset(raw_file: str):
+    """Convert dataset file to Parquet for faster load in Pandas"""
+    stored_file = str(Path(raw_file).with_suffix(".parquet"))
+    stored_file_path = data_path / stored_file
 
-    if not data_file.exists():
-        LOGGER.info(f"Converting file to HDF5: {filename}...")
+    if not stored_file_path.exists():
+        LOGGER.info(f"Converting file to Parquet: {raw_file}...")
 
-        temp_file = tmp_path / h5_filename
-        LOGGER.info(f"Reading file: {filename}...")
-        df = pd.read_csv(data_path / filename, parse_dates=["event_date"])
+        temp_file = tmp_path / stored_file
+        LOGGER.info(f"Reading file: {raw_file}...")
+        df = pd.read_csv(data_path / raw_file, parse_dates=["event_date"])
 
-        LOGGER.info(f"Writing file: {h5_filename}...")
-        df.to_hdf(temp_file, key="df", mode="w")
+        LOGGER.info(f"Writing file: {stored_file}...")
+        df.to_parquet(temp_file)
 
-        shutil.move(temp_file, data_file)
+        shutil.move(temp_file, stored_file_path)
 
         LOGGER.info(
-            f"Converted file to HDF5: {h5_filename} ({human_file_size(data_file)})"
+            f"Converted file to Parquet: {stored_file} ({human_file_size(stored_file_path)})"
         )
 
-    return h5_filename
+    return stored_file
 
 
 @st.cache_data
 def load_dataset(year) -> pd.DataFrame:
-    dataset_file = download_dataset(year)
-    h5_file = convert_to_hdf5(dataset_file)
-    df = pd.read_hdf(data_path / h5_file)
+    raw_file = download_dataset(year)
+    stored_file = store_dataset(raw_file)
+    df = pd.read_parquet(data_path / stored_file)
     return df
 
 
