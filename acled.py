@@ -1,100 +1,72 @@
 import colorsys
-import shutil
 from datetime import date, timedelta
 from pathlib import Path
+from urllib.parse import urljoin
 
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import requests
 import streamlit as st
+from bs4 import BeautifulSoup
 from dateutil.relativedelta import relativedelta
-from streamlit.logger import get_logger
-
-LOGGER = get_logger(__name__)
-
-tmp_path = Path("/tmp")
-data_path = Path("static")
-data_path.mkdir(exist_ok=True)
 
 
-def human_file_size(file: Path, suffix="B"):
-    # From: https://stackoverflow.com/questions/1094841/get-human-readable-version-of-file-size
-    size = file.stat().st_size
-    for unit in ("", "K", "M", "G", "T", "P", "E", "Z"):
-        if abs(size) < 1024.0:
-            return f"{size:3.1f}{unit}{suffix}"
-        size /= 1024.0
-    return f"{size:.1f}Y{suffix}"
+@st.cache_resource(ttl=86400)
+def access_token() -> str:
+    r = requests.post(
+        "https://acleddata.com/oauth/token",
+        data={
+            "username": st.secrets["acled_email"],
+            "password": st.secrets["acled_password"],
+            "grant_type": "password",
+            "client_id": "acled",
+        },
+    )
+    r.raise_for_status()
+    return r.json()["access_token"]
 
 
-def download_dataset(year):
-    filename = f"{year}.csv"
+@st.cache_data(ttl=86400)
+def load_page(url: str) -> str:
+    r = requests.get(url, headers={"Authorization": "Bearer " + access_token()})
+    r.raise_for_status()
+    return r.text
 
-    data_file = data_path / filename
 
-    if not data_file.exists():
-        r = requests.get(
-            "https://api.acleddata.com/acled/read.exportcsv",
-            params={
-                "email": st.secrets["acled_email"],
-                "key": st.secrets["acled_key"],
-                "year": year,
-                "limit": 0,
-            },
-            stream=True,
+def load_soup(url: str) -> BeautifulSoup:
+    return BeautifulSoup(load_page(url), features="html.parser")
+
+
+@st.cache_data(ttl=86400)
+def load_excel(url: str) -> pd.DataFrame:
+    df = pd.read_excel(
+        url, storage_options={"Authorization": "Bearer " + access_token()}
+    )
+    df.columns = [c.lower() for c in df.columns]
+
+    return df
+
+
+@st.cache_data(ttl=86400)
+def load_dataset() -> pd.DataFrame:
+    data_files_page = load_soup(
+        "https://acleddata.com/conflict-data/download-data-files"
+    )
+
+    df = pd.concat(
+        load_excel(
+            urljoin(
+                "https://acleddata.com",
+                load_soup(urljoin("https://acleddata.com", a["href"])).select_one(
+                    "a.o-button--file"
+                )["href"],
+            )
         )
+        for a in data_files_page.select('a[href^="/aggregated/"]')
+        if a.get_text(strip=True).startswith("Aggregated data on ")
+    )
 
-        LOGGER.info(
-            f"Download dataset response: {dict(status_code=r.status_code, headers=r.headers)}"
-        )
-
-        r.raise_for_status()
-
-        LOGGER.info(f"Downloading dataset to file: {filename}")
-
-        temp_file = tmp_path / filename
-        with temp_file.open("wb") as f:
-            for chunk in r.iter_content(1024):
-                f.write(chunk)
-        shutil.move(temp_file, data_path / filename)
-
-        LOGGER.info(
-            f"Downloaded dataset to file: {filename} ({human_file_size(data_file)})"
-        )
-
-    return filename
-
-
-def store_dataset(raw_file: str):
-    """Convert dataset file to Parquet for faster load in Pandas"""
-    stored_file = str(Path(raw_file).with_suffix(".parquet"))
-    stored_file_path = data_path / stored_file
-
-    if not stored_file_path.exists():
-        LOGGER.info(f"Converting file to Parquet: {raw_file}...")
-
-        temp_file = tmp_path / stored_file
-        LOGGER.info(f"Reading file: {raw_file}...")
-        df = pd.read_csv(data_path / raw_file, parse_dates=["event_date"])
-
-        LOGGER.info(f"Writing file: {stored_file}...")
-        df.to_parquet(temp_file)
-
-        shutil.move(temp_file, stored_file_path)
-
-        LOGGER.info(
-            f"Converted file to Parquet: {stored_file} ({human_file_size(stored_file_path)})"
-        )
-
-    return stored_file
-
-
-@st.cache_data
-def load_dataset(year) -> pd.DataFrame:
-    raw_file = download_dataset(year)
-    stored_file = store_dataset(raw_file)
-    df = pd.read_parquet(data_path / stored_file)
     return df
 
 
@@ -106,19 +78,20 @@ def main():
 
     st.title("ACLED | Armed Conflict Location & Events Data")
 
+    df = load_dataset()
+    df["event_date"] = df["week"]
+
     with st.form("date_range"):
         start_date, end_date = st.slider(
             "##### Date range",
             value=(date.today() - relativedelta(years=1), date.today()),
-            min_value=date(2020, 1, 1),
+            min_value=df["event_date"].min().date(),
             max_value=date.today(),
         )
 
         st.form_submit_button()
 
-    df = pd.concat(map(load_dataset, range(start_date.year, end_date.year + 1)))
-
-    df = df[df.event_date.dt.date.between(start_date, end_date + timedelta(days=1))]
+    df = df[df["event_date"].dt.date.between(start_date, end_date + timedelta(days=1))]
 
     with st.expander("Filters"):
         filter_columns = [
@@ -126,7 +99,7 @@ def main():
             ("country", "Countries"),
             ("event_type", "Event Types"),
             ("sub_event_type", "Sub-event Types"),
-            ("source_scale", "Source Type"),
+            # ("source_scale", "Source Type"),
         ]
 
         st_columns = st.columns(2)
@@ -170,7 +143,13 @@ def main():
         )
         df["size"] = df["fatalities"].rank(method="dense") * 10
 
-        st.map(df.sort_values("event_date"), color="color", size="size")
+        st.map(
+            df.sort_values("event_date"),
+            color="color",
+            size="size",
+            latitude="centroid_latitude",
+            longitude="centroid_longitude",
+        )
 
     st.header("Recent")
 
