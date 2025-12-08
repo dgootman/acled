@@ -1,6 +1,5 @@
 import colorsys
 from datetime import date, timedelta
-from pathlib import Path
 from urllib.parse import urljoin
 
 import numpy as np
@@ -176,18 +175,6 @@ def main():
 
         st.header("Cumulative fatalities by date and country")
         st.plotly_chart(px.line(fatalities_by_date_and_country.cumsum()))
-
-    with st.expander("Cached files"):
-        for file in sorted(Path("static").iterdir()):
-            col1, col2, col3 = st.columns([1, 2, 10])
-            with col1:
-                if st.button("🗑️", key=str(file)):
-                    file.unlink()
-                    st.rerun()
-            with col2:
-                st.write(human_file_size(file))
-            with col3:
-                st.markdown(f"[{file.name}](app/{file})")
 
 
 if __name__ == "__main__":
