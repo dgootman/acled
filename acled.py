@@ -1,4 +1,5 @@
 import colorsys
+import re
 from datetime import date, timedelta
 from urllib.parse import urljoin
 
@@ -47,24 +48,51 @@ def load_excel(url: str) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=86400)
-def load_dataset() -> pd.DataFrame:
-    data_files_page = load_soup(
-        "https://acleddata.com/conflict-data/download-data-files"
-    )
-
-    df = pd.concat(
-        load_excel(
-            urljoin(
-                "https://acleddata.com",
-                load_soup(urljoin("https://acleddata.com", a["href"])).select_one(
-                    "a.o-button--file"
-                )["href"],
-            )
+@st.cache_data(ttl=86400, show_spinner=False)
+def load_data() -> pd.DataFrame:
+    with st.status("Loading data...", expanded=True) as status:
+        st.markdown(
+            "Searching for [datasets](https://acleddata.com/conflict-data/download-data-files)..."
         )
-        for a in data_files_page.select('a[href^="/aggregated/"]')
-        if a.get_text(strip=True).startswith("Aggregated data on ")
-    )
+        data_files_page = load_soup(
+            "https://acleddata.com/conflict-data/download-data-files"
+        )
+
+        links = [
+            a
+            for a in data_files_page.select('a[href^="/aggregated/"]')
+            if a.get_text(strip=True).startswith("Aggregated data on ")
+        ]
+
+        st.write(f"Found {len(links)} datasets")
+
+        dfs: list[pd.DataFrame] = []
+        for link in links:
+            dataset_url = urljoin("https://acleddata.com", link["href"])
+            dataset_page = load_soup(dataset_url)
+            dataset_link = dataset_page.select_one("a.o-button--file")
+
+            dataset_date = re.search(
+                r"\d{4}-\d{2}-\d{2}", dataset_link.get_text(strip=True)
+            )
+            dataset_date_str = (
+                f" (Last updated: {dataset_date.group(0)})" if dataset_date else ""
+            )
+
+            st.markdown(
+                f"Loading [{dataset_page.select_one('h1').get_text(strip=True)}]({dataset_url}){dataset_date_str}..."
+            )
+
+            dfs.append(
+                load_excel(urljoin("https://acleddata.com", dataset_link["href"]))
+            )
+
+        st.write("Aggregating...")
+        df = pd.concat(dfs)
+
+        st.write("Done")
+
+        status.update(label="Data loaded!", expanded=False)
 
     return df
 
@@ -77,7 +105,7 @@ def main():
 
     st.title("ACLED | Armed Conflict Location & Events Data")
 
-    df = load_dataset()
+    df = load_data()
     df["event_date"] = df["week"]
 
     with st.form("date_range"):
